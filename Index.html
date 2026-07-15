@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Feldprotokoll – Belichtung / Berechnung</title>
+<style>
+  :root{
+    --paper:#FAFAF7; --ink:#141414; --grey:#8A8A86; --line:#DDDDD8;
+    --amber:#C75B12; --amber-soft:#FBEFE6; --ai:#F2F2EC;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{font-size:16px}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif;
+    background:var(--paper); color:var(--ink); line-height:1.45;
+    max-width:640px; margin:0 auto; padding:20px 16px 90px;
+  }
+  .mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+
+  /* Kopf */
+  header{display:flex; justify-content:space-between; align-items:baseline;
+    border-bottom:2px solid var(--ink); padding-bottom:10px; margin-bottom:18px}
+  header h1{font-size:1.15rem; font-weight:700; letter-spacing:-0.01em}
+  header .count{font-size:.75rem; color:var(--amber); letter-spacing:.08em}
+
+  /* Listenansicht */
+  .empty{color:var(--grey); font-size:.9rem; padding:32px 0; text-align:center}
+  .card{border:1px solid var(--line); background:#fff; border-radius:10px;
+    padding:14px; margin-bottom:10px; cursor:pointer}
+  .card:active{background:var(--amber-soft)}
+  .card .top{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px}
+  .card .frame{font-size:.75rem; color:var(--amber); letter-spacing:.1em}
+  .card .when{font-size:.72rem; color:var(--grey)}
+  .card .place{font-weight:600; font-size:.95rem}
+  .card .snippet{font-size:.8rem; color:var(--grey); margin-top:3px;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+
+  /* Formular */
+  .section{margin-bottom:22px}
+  .section-head{display:flex; align-items:baseline; gap:8px; margin-bottom:10px;
+    padding-bottom:5px; border-bottom:1px solid var(--line)}
+  .section-head h2{font-size:.8rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase}
+  .section-head span{font-size:.7rem; color:var(--grey)}
+  .section.ai{background:var(--ai); border:1px solid var(--line); border-radius:12px; padding:14px}
+  .section.ai .section-head{border-color:var(--amber)}
+  .section.ai .section-head h2{color:var(--amber)}
+
+  label{display:block; font-size:.72rem; font-weight:600; letter-spacing:.04em;
+    color:var(--ink); margin:12px 0 4px}
+  label small{font-weight:400; color:var(--grey); letter-spacing:0}
+  input,textarea{
+    width:100%; border:1px solid var(--line); border-radius:8px; background:#fff;
+    padding:10px 11px; font-size:16px; font-family:inherit; color:var(--ink)
+  }
+  input:focus,textarea:focus{outline:2px solid var(--amber); outline-offset:-1px; border-color:var(--amber)}
+  textarea{resize:vertical; min-height:72px}
+  .row{display:flex; gap:8px}
+  .row > div{flex:1}
+
+  /* Buttons */
+  button{font-family:inherit; font-size:.85rem; font-weight:600; border-radius:9px;
+    padding:11px 14px; border:1px solid var(--ink); background:#fff; color:var(--ink); cursor:pointer}
+  button:focus-visible{outline:2px solid var(--amber); outline-offset:2px}
+  button.primary{background:var(--ink); color:var(--paper)}
+  button.amber{background:var(--amber); border-color:var(--amber); color:#fff}
+  button.ghost{border-color:var(--line); color:var(--grey)}
+  button.danger{border-color:#B3261E; color:#B3261E}
+  .btnrow{display:flex; gap:8px; margin-top:14px}
+  .btnrow button{flex:1}
+  .inlinebtn{padding:8px 10px; font-size:.72rem; white-space:nowrap}
+
+  /* Fixe Fussleiste */
+  .fab{position:fixed; left:0; right:0; bottom:0; background:var(--paper);
+    border-top:1px solid var(--line); padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    display:flex; gap:8px; max-width:640px; margin:0 auto}
+  .fab button{flex:1}
+
+  /* Vor dem Auslösen */
+  .pre{border-left:3px solid var(--amber); padding:8px 12px; margin-bottom:18px;
+    font-size:.78rem; color:var(--grey)}
+  .pre b{color:var(--ink); display:block; margin-bottom:2px; font-size:.72rem;
+    letter-spacing:.06em; text-transform:uppercase}
+
+  .toast{position:fixed; bottom:84px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:var(--paper); font-size:.8rem; padding:9px 16px;
+    border-radius:20px; opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap}
+  .toast.show{opacity:1}
+  .hidden{display:none}
+  @media (prefers-reduced-motion: reduce){ .toast{transition:none} }
+
+  /* Druckansicht: eine Seite pro Aufnahme, Ausstellungs-Layout */
+  #printArea{display:none}
+  @media print{
+    body{background:#fff; padding:0; max-width:none}
+    body > *:not(#printArea){display:none !important}
+    #printArea{display:block}
+    .psheet{page-break-after:always; padding:18mm 16mm 14mm; color:#000}
+    .psheet .phead{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+      font-size:9pt; letter-spacing:.12em; display:flex; justify-content:space-between;
+      gap:12px; border-bottom:1.2pt solid #000; padding-bottom:6px; margin-bottom:16px}
+    .psheet h3{font-size:8.5pt; font-weight:700; text-transform:uppercase;
+      letter-spacing:.09em; margin-bottom:12px}
+    .psheet .ptext{white-space:pre-wrap; font-size:11.5pt; line-height:1.6; max-width:150mm}
+    .psheet .pfoot{margin-top:18px; padding-top:8px; border-top:.6pt solid #000;
+      font-size:8.5pt; color:#333; letter-spacing:.02em}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Feldprotokoll</h1>
+  <div class="count mono" id="count">0 AUFNAHMEN</div>
+</header>
+
+<!-- LISTE -->
+<div id="viewList">
+  <div class="pre">
+    <b>Vor dem Auslösen</b>
+    Standpunkt fixieren · Protokoll VOR dem Weitergehen ausfüllen · sichtbare Texte wörtlich notieren · ein Filmstock, eine Kamera
+  </div>
+  <div id="list"></div>
+  <div class="btnrow">
+    <button class="ghost" id="btnExportAll">Protokoll kopieren</button>
+    <button class="ghost" id="btnFile">Als Datei sichern</button>
+  </div>
+  <div class="btnrow">
+    <button id="btnPrint">Druckansicht (eine Seite pro Aufnahme)</button>
+  </div>
+</div>
+
+<!-- FORMULAR -->
+<div id="viewForm" class="hidden">
+
+  <div class="section">
+    <div class="section-head"><h2>Technik</h2><span>bleibt bei dir, geht nie an die KI</span></div>
+    <div class="row">
+      <div><label>Frame-Nr.</label><input id="f_frame" class="mono" placeholder="12A" autocomplete="off"></div>
+      <div><label>Datum / Zeit</label>
+        <div class="row">
+          <input id="f_when" class="mono" placeholder="14.07. 18:40">
+          <button type="button" class="inlinebtn" id="btnNow">Jetzt</button>
+        </div>
+      </div>
+    </div>
+    <label>Ort <small>– Name, ggf. Koordinaten</small></label>
+    <div class="row">
+      <input id="f_place" placeholder="Pointe de la Jonction, Westspitze">
+      <button type="button" class="inlinebtn" id="btnGeo">GPS</button>
+    </div>
+    <div class="row">
+      <div><label>Kamera</label><input id="f_cam" placeholder="Kamera"></div>
+      <div><label>Film</label><input id="f_film" placeholder="Tri-X 400"></div>
+    </div>
+    <div class="row">
+      <div><label>Brennweite</label><input id="f_focal" class="mono" placeholder="50 mm"></div>
+      <div><label>Blende</label><input id="f_aperture" class="mono" placeholder="f/8"></div>
+      <div><label>Zeit</label><input id="f_shutter" class="mono" placeholder="1/250"></div>
+    </div>
+    <label>Technische Notizen <small>– Filter, Stativ, Besonderheiten</small></label>
+    <input id="f_technotes" placeholder="optional">
+  </div>
+
+  <div class="section ai">
+    <div class="section-head"><h2>Szenenprotokoll</h2><span>nur daraus entsteht der KI-Prompt</span></div>
+
+    <label>Standpunkt &amp; Blickrichtung <small>– Höhe, Distanz, Richtung</small></label>
+    <textarea id="f_viewpoint" placeholder="Augenhöhe, ca. 1,6 m, Blick nach Westen auf den Zusammenfluss, ca. 15 m vom Ufer"></textarea>
+
+    <label>Licht &amp; Wetter <small>– Richtung, Härte, Himmel</small></label>
+    <textarea id="f_light" placeholder="Tiefe Abendsonne von links, harte lange Schatten, wolkenloser Himmel"></textarea>
+
+    <label>Szene <small>– Vordergrund, Mitte, Hintergrund; was passiert</small></label>
+    <textarea id="f_scene" style="min-height:110px" placeholder="Vordergrund: ... Mittelgrund: ... Hintergrund: ..."></textarea>
+
+    <label>Sichtbare Texte &amp; Schilder <small>– wörtlich abschreiben</small></label>
+    <textarea id="f_text" placeholder="Graffiti «...», Verbotstafel «Baignade interdite»"></textarea>
+
+    <label>Materialien &amp; Farben <small>– Oberflächen, Zustand, Verwitterung</small></label>
+    <textarea id="f_material" placeholder="Rissiger Beton, verblasste Farbe, rostige Geländer, zwei Wasserfarben: grünblau / graubraun"></textarea>
+
+    <label>Das Unwahrscheinliche <small>– Details, die eine KI vermutlich verfehlt</small></label>
+    <textarea id="f_unlikely" placeholder="Ein einzelner Schuh auf dem Poller, schiefes provisorisches Klebeband am Schild"></textarea>
+  </div>
+
+  <div class="btnrow">
+    <button class="ghost" id="btnCancel">Abbrechen</button>
+    <button class="danger hidden" id="btnDelete">Löschen</button>
+    <button class="primary" id="btnSave">Speichern</button>
+  </div>
+  <div class="btnrow">
+    <button class="amber" id="btnPrompt">KI-Prompt kopieren</button>
+  </div>
+</div>
+
+<div class="fab" id="fabBar">
+  <button class="primary" id="btnNew">+ Neue Aufnahme</button>
+</div>
+
+<div id="printArea"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const KEY='feldprotokoll-v1';
+let entries=[]; let editingId=null;
+
+/* Speicher: in Claude das Artifact-Storage, ausserhalb (eigener Server/Safari)
+   automatisch localStorage. Nie beides gleichzeitig. */
+const store={
+  async get(k){
+    if(window.storage) return window.storage.get(k);
+    const v=localStorage.getItem(k);
+    return v!==null?{key:k,value:v}:null;
+  },
+  async set(k,v){
+    if(window.storage) return window.storage.set(k,v);
+    localStorage.setItem(k,v);
+    return {key:k,value:v};
+  }
+};
+
+const $=id=>document.getElementById(id);
+const FIELDS=['frame','when','place','cam','film','focal','aperture','shutter','technotes',
+              'viewpoint','light','scene','text','material','unlikely'];
+
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),1800);}
+
+async function load(){
+  try{const r=await store.get(KEY);
+    entries=r&&r.value?JSON.parse(r.value):[];}
+  catch(e){entries=[];}
+  renderList();
+}
+async function persist(){
+  try{const r=await store.set(KEY,JSON.stringify(entries));
+    if(!r) toast('Speichern fehlgeschlagen');}
+  catch(e){toast('Speichern fehlgeschlagen');}
+}
+
+function renderList(){
+  $('count').textContent=entries.length+(entries.length===1?' AUFNAHME':' AUFNAHMEN');
+  const list=$('list');
+  if(!entries.length){
+    list.innerHTML='<div class="empty">Noch keine Aufnahmen protokolliert.<br>Erst auslösen, dann sofort dokumentieren.</div>';
+    return;
+  }
+  list.innerHTML='';
+  [...entries].reverse().forEach(e=>{
+    const c=document.createElement('div'); c.className='card';
+    c.innerHTML=`<div class="top"><span class="frame mono">${esc(e.frame)||'–'}</span>
+      <span class="when mono">${esc(e.when)||''}</span></div>
+      <div class="place">${esc(e.place)||'Ohne Ort'}</div>
+      <div class="snippet">${esc(e.scene)||''}</div>`;
+    c.onclick=()=>openForm(e.id);
+    list.appendChild(c);
+  });
+}
+function esc(s){return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+
+function openForm(id){
+  editingId=id;
+  const e=id?entries.find(x=>x.id===id):null;
+  FIELDS.forEach(f=>$('f_'+f).value=e?(e[f]||''):'');
+  if(!e){
+    $('f_when').value=nowStr();
+    const last=entries[entries.length-1];
+    if(last){['cam','film','place'].forEach(f=>$('f_'+f).value=last[f]||'');}
+  }
+  $('btnDelete').classList.toggle('hidden',!id);
+  $('viewList').classList.add('hidden'); $('fabBar').classList.add('hidden');
+  $('viewForm').classList.remove('hidden');
+  window.scrollTo(0,0);
+}
+function closeForm(){
+  editingId=null;
+  $('viewForm').classList.add('hidden');
+  $('viewList').classList.remove('hidden'); $('fabBar').classList.remove('hidden');
+  renderList();
+}
+function nowStr(){
+  const d=new Date(),p=n=>String(n).padStart(2,'0');
+  return `${p(d.getDate())}.${p(d.getMonth()+1)}. ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+async function save(){
+  const data={}; FIELDS.forEach(f=>data[f]=$('f_'+f).value.trim());
+  if(!data.scene && !data.place){toast('Mindestens Ort oder Szene ausfüllen');return;}
+  if(editingId){
+    const i=entries.findIndex(x=>x.id===editingId);
+    entries[i]={...entries[i],...data};
+  }else{
+    entries.push({id:Date.now().toString(36),...data});
+  }
+  await persist(); closeForm(); toast('Gespeichert');
+}
+async function removeEntry(){
+  if(!editingId)return;
+  if(!confirm('Diese Aufnahme wirklich löschen?'))return;
+  entries=entries.filter(x=>x.id!==editingId);
+  await persist(); closeForm(); toast('Gelöscht');
+}
+
+/* KI-Prompt: NUR Szenenprotokoll-Felder, keine Technik */
+function buildPrompt(d){
+  const parts=[];
+  parts.push('Erzeuge ein fotorealistisches Bild ausschliesslich auf Basis dieser Szenenbeschreibung.');
+  if(d.viewpoint)parts.push('Standpunkt und Blickrichtung: '+d.viewpoint);
+  if(d.light)parts.push('Licht und Wetter: '+d.light);
+  if(d.scene)parts.push('Szene: '+d.scene);
+  if(d.text)parts.push('Sichtbare Texte und Schilder (wörtlich): '+d.text);
+  if(d.material)parts.push('Materialien und Farben: '+d.material);
+  if(d.unlikely)parts.push('Weitere Details: '+d.unlikely);
+  return parts.join('\n\n');
+}
+function buildFull(d){
+  return [
+    '=== '+(d.frame||'–')+' · '+(d.when||'')+' ===',
+    'Ort: '+(d.place||'–'),
+    'Technik: '+[d.cam,d.film,d.focal,d.aperture,d.shutter].filter(Boolean).join(' · '),
+    d.technotes?('Notizen: '+d.technotes):'',
+    '--- Szenenprotokoll ---',
+    buildPrompt(d)
+  ].filter(Boolean).join('\n');
+}
+async function copyText(txt,okMsg){
+  try{await navigator.clipboard.writeText(txt);toast(okMsg);}
+  catch(e){
+    const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);
+    ta.select();try{document.execCommand('copy');toast(okMsg);}catch(_){toast('Kopieren nicht möglich');}
+    document.body.removeChild(ta);
+  }
+}
+
+$('btnNew').onclick=()=>openForm(null);
+$('btnCancel').onclick=closeForm;
+$('btnSave').onclick=save;
+$('btnDelete').onclick=removeEntry;
+$('btnNow').onclick=()=>$('f_when').value=nowStr();
+$('btnGeo').onclick=()=>{
+  if(!navigator.geolocation){toast('GPS nicht verfügbar');return;}
+  navigator.geolocation.getCurrentPosition(
+    p=>{const c=p.coords.latitude.toFixed(5)+', '+p.coords.longitude.toFixed(5);
+      const v=$('f_place').value.trim();
+      $('f_place').value=v?(v+' ('+c+')'):c; toast('Koordinaten eingefügt');},
+    ()=>toast('GPS nicht verfügbar'),{timeout:6000});
+};
+$('btnPrompt').onclick=()=>{
+  const d={};FIELDS.forEach(f=>d[f]=$('f_'+f).value.trim());
+  if(!d.scene){toast('Szene ist leer');return;}
+  copyText(buildPrompt(d),'KI-Prompt kopiert');
+};
+$('btnExportAll').onclick=()=>{
+  if(!entries.length){toast('Keine Einträge');return;}
+  copyText(entries.map(buildFull).join('\n\n\n'),'Gesamtprotokoll kopiert');
+};
+$('btnFile').onclick=()=>{
+  if(!entries.length){toast('Keine Einträge');return;}
+  try{
+    const txt=entries.map(buildFull).join('\n\n\n');
+    const blob=new Blob([txt],{type:'text/plain;charset=utf-8'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='feldprotokoll-'+new Date().toISOString().slice(0,10)+'.txt';
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    toast('Datei erzeugt');
+  }catch(e){toast('Download hier nicht möglich – Text kopieren nutzen');}
+};
+$('btnPrint').onclick=()=>{
+  if(!entries.length){toast('Keine Einträge');return;}
+  const pa=$('printArea');
+  pa.innerHTML=entries.map(e=>`
+    <div class="psheet">
+      <div class="phead">
+        <span>${esc(e.frame)||'–'}</span>
+        <span>${esc(e.when)||''}</span>
+        <span>${esc(e.place)||''}</span>
+      </div>
+      <h3>Szenenprotokoll — an das Bildmodell übergebener Text</h3>
+      <div class="ptext">${esc(buildPrompt(e))}</div>
+      <div class="pfoot">Analoge Aufnahme: ${esc([e.cam,e.film,e.focal,e.aperture,e.shutter].filter(Boolean).join(' · '))||'–'}${e.technotes?(' · '+esc(e.technotes)):''}</div>
+    </div>`).join('');
+  window.print();
+};
+
+load();
+</script>
+</body>
+</html>
